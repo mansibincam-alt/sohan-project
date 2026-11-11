@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Glowing cyan moon -->
+    <path
+        android:fillColor="#22D3EE"
+        android:pathData="M54,24 A30,30 0 1,0 54,84 A30,30 0 1,0 54,24 Z" />
+    <!-- Overlay in background colour to form the crescent -->
+    <path
+        android:fillColor="#0B1B33"
+        android:pathData="M70,30 A24,24 0 1,0 70,78 A24,24 0 1,0 70,30 Z" />
+    <!-- Small star -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M82,36 L84,41 L89,41 L85,44 L87,49 L82,46 L77,49 L79,44 L75,41 L80,41 Z" />
+</vector>
