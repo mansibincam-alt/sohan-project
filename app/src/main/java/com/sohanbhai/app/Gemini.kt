@@ -32,14 +32,20 @@ object Gemini {
     )
 
     /**
-     * assets/API_KEY ফাইলে তিনটি কী, প্রতি লাইনে একটি।
-     * খালি লাইন বাদ যায়।
+     * assets/API_KEY ফাইলে প্রতি লাইনে একটি কী, [ ] ব্র্যাকেটের ভেতরে লেখা।
+     * ব্র্যাকেটের বাইরের লেখা (যেমন API 1) ও খালি ব্র্যাকেট বাদ যায়।
+     * ব্র্যাকেট না থাকলে পুরো লাইনটাই কী ধরা হয়।
      */
     fun apiKeys(ctx: Context): List<String> =
         runCatching {
             ctx.assets.open("API_KEY").bufferedReader().use { it.readLines() }
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
+                .mapNotNull { line ->
+                    val s = line.trim()
+                    val key = if (s.contains('[') && s.contains(']'))
+                        s.substringAfter('[').substringBefore(']').trim()
+                    else s
+                    if (key.isEmpty()) null else key
+                }
         }.getOrDefault(emptyList())
 
     private fun part(text: String) = JSONObject().put("text", text)

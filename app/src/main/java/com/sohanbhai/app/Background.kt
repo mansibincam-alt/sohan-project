@@ -24,13 +24,13 @@ import androidx.media3.ui.PlayerView
  * ফাইল না থাকলে তারার আকাশ দেখায়।
  */
 @Composable
-fun VideoBackground(modifier: Modifier = Modifier) {
+fun VideoBackground(modifier: Modifier = Modifier, resName: String = "background_video", starsIfMissing: Boolean = true) {
     val ctx = LocalContext.current
-    val resId = remember { ctx.resources.getIdentifier("background_video", "raw", ctx.packageName) }
+    val resId = remember { ctx.resources.getIdentifier(resName, "raw", ctx.packageName) }
 
     Box(modifier) {
         if (resId == 0) {
-            StarField()
+            if (starsIfMissing) StarField()
         } else {
             val player = remember {
                 ExoPlayer.Builder(ctx).build().apply {

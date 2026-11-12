@@ -102,6 +102,8 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import android.media.MediaPlayer
+import androidx.compose.ui.res.painterResource
 
 data class ToolInfo(val key: String, val label: String, val icon: ImageVector, val color: Color, val subtitle: String)
 
@@ -139,7 +141,7 @@ private val toolPrefix = mapOf(
 
 /** ছবি তৈরির ৩০ সেকেন্ড বিরতি: শেষ অনুরোধের সময় এখানে থাকে। */
 private const val IMAGE_COOLDOWN_MS = 30_000L
-private var lastRequestAt = 0L
+private var lastImageAt = 0L
 
 private fun readAttachment(ctx: Context, uri: Uri): Attachment? {
     val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
@@ -170,7 +172,7 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
     // ছবি তৈরির ৩০ সেকেন্ড কাউন্টডাউন
     LaunchedEffect(busy) {
         while (true) {
-            val left = ((lastRequestAt + IMAGE_COOLDOWN_MS - System.currentTimeMillis()) / 1000).toInt()
+            val left = ((lastImageAt + IMAGE_COOLDOWN_MS - System.currentTimeMillis()) / 1000).toInt()
             cooldownLeft = if (left > 0) left else 0
             delay(500)
         }
@@ -221,7 +223,7 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
         val isImage = t == "image" || t == "edit"
 
         if (isImage) {
-            val left = ((lastRequestAt + IMAGE_COOLDOWN_MS - System.currentTimeMillis()) / 1000).toInt()
+            val left = ((lastImageAt + IMAGE_COOLDOWN_MS - System.currentTimeMillis()) / 1000).toInt()
             if (left > 0) {
                 notice = "ছবি তৈরির আগে ${left} সেকেন্ড অপেক্ষা করুন"
                 return
@@ -245,7 +247,7 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
         attachment = null
         notice = null
         busy = true
-        lastRequestAt = System.currentTimeMillis()
+        if (isImage) lastImageAt = System.currentTimeMillis()
 
         scope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -292,6 +294,7 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
     ) {
         // চ্যাটের ব্যাকগ্রাউন্ড: সাদামাটা গাঢ় রঙ
         Box(Modifier.fillMaxSize().background(Night)) {
+            VideoBackground(Modifier.fillMaxSize(), resName = "chat_video", starsIfMissing = false)
             Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
 
                 // উপরে: ইতিহাস (বাঁয়ে), শিরোনাম (মাঝে), ৩-ডট মেনু (ডানে)
@@ -721,6 +724,7 @@ fun MessageBubble(m: ChatMessage, animate: Boolean) {
                     StreamingText(m.text)
                 }
             }
+            if (!isUser && m.text.contains("Mansib IT")) DeveloperCard()
         }
     }
 }
@@ -728,12 +732,14 @@ fun MessageBubble(m: ChatMessage, animate: Boolean) {
 /** লেখা ধীরে ধীরে আসে; লেখা চলাকালীন বেগুনি, শেষ হলে সাদা। */
 @Composable
 fun StreamingText(full: String) {
+    val ctx = LocalContext.current
     var shown by remember(full) { mutableIntStateOf(0) }
     LaunchedEffect(full) {
         while (shown < full.length) {
             shown = minOf(full.length, shown + 3)
             delay(14)
         }
+        playDone(ctx)
     }
     val done = shown >= full.length
     val color by animateColorAsState(
@@ -772,5 +778,55 @@ fun TypingDots() {
                 )
             }
         }
+    }
+}
+
+
+private fun playDone(ctx: Context) {
+    runCatching {
+        MediaPlayer.create(ctx, R.raw.done_chime)?.apply {
+            setOnCompletionListener { it.release() }
+            start()
+        }
+    }
+}
+
+/** এআই ডেভেলপারের কথা বললে দেখানো কার্ড। লোগো ও লিংক assets/admin ফোল্ডার থেকে আসে। */
+@Composable
+fun DeveloperCard() {
+    val ctx = LocalContext.current
+    val logo = remember {
+        runCatching {
+            ctx.assets.open("admin/developer_logo.jpg").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+        }.getOrNull()
+    }
+    val url = remember {
+        runCatching {
+            ctx.assets.open("admin/developer_website.txt").bufferedReader().use { it.readText().trim() }
+        }.getOrDefault("")
+    }
+    Column(
+        Modifier
+            .padding(top = 10.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = url.isNotEmpty()) {
+                runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+            }
+    ) {
+        if (logo != null) {
+            Image(
+                bitmap = logo,
+                contentDescription = "Mansib IT",
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.FillWidth
+            )
+        }
+        Text(
+            "Developer: Mansibur Rahman · Mansib IT",
+            color = Color(0xFFC4B5FD),
+            fontSize = 12.sp,
+            modifier = Modifier.padding(top = 6.dp)
+        )
     }
 }
