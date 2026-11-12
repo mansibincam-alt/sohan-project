@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
@@ -28,13 +29,13 @@ import kotlinx.coroutines.delay
 fun SplashScreen(onDone: () -> Unit) {
     val ctx = LocalContext.current
     val resId = remember { ctx.resources.getIdentifier("intro_video", "raw", ctx.packageName) }
-    val done by rememberUpdatedState(onDone)
+    val currentOnDone = rememberUpdatedState(onDone)
     val finished = remember { booleanArrayOf(false) }
 
     fun finish() {
         if (!finished[0]) {
             finished[0] = true
-            done()
+            currentOnDone.value()
         }
     }
 
