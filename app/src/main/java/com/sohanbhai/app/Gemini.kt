@@ -22,9 +22,9 @@ object Gemini {
 
     /** ছবি তৈরির মডেল: একটি না চললে পরের নামটি চেষ্টা করা হয়। */
     private val IMAGE_MODELS = listOf(
-        "gemini-2.5-flash-image",
-        "gemini-2.5-flash-image-preview",
-        "gemini-2.0-flash-preview-image-generation"
+        "gemini-3.1-flash-image",   // Nano Banana 2 (stable)
+        "gemini-3-pro-image",       // Nano Banana Pro
+        "gemini-2.5-flash-image"    // Nano Banana (stable, older)
     )
 
     fun apiKey(ctx: Context): String =

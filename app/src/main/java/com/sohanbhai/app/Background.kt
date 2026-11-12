@@ -20,7 +20,7 @@ import androidx.media3.ui.PlayerView
 /**
  * Looping, muted background video from res/raw/background_video.mp4.
  * Put a waterfall / mountain clip there (keep it ~1080p, ~5-10 MB, so the APK stays small).
- * If the file is missing, the procedural nature scene (mountains + waterfall) is shown instead.
+ * If the file is missing, the animated starfield is shown instead.
  */
 @Composable
 fun VideoBackground(modifier: Modifier = Modifier) {
@@ -29,7 +29,7 @@ fun VideoBackground(modifier: Modifier = Modifier) {
 
     Box(modifier) {
         if (resId == 0) {
-            NatureScene(Modifier.fillMaxSize())
+            StarField()
         } else {
             val player = remember {
                 ExoPlayer.Builder(ctx).build().apply {

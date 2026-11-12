@@ -1,6 +1,7 @@
 package com.sohanbhai.app
 
 import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -17,7 +18,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,9 +41,9 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -57,11 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -86,13 +82,13 @@ fun HomeScreen(go: (Route) -> Unit) {
     LaunchedEffect(Unit) {
         val granted = ContextCompat.checkSelfPermission(
             ctx, Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) == PackageManager.PERMISSION_GRANTED
         if (!granted) permLauncher.launch(
             arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
         )
     }
 
-    // নিজের অবস্থানের আবহাওয়া: প্রতি ১০ সেকেন্ডে অটো রিলোড
+    // নিজের অবস্থানের আবহাওয়া: প্রতি ১০ সেকেন্ডে রিলোড
     LaunchedEffect(Unit) {
         while (true) {
             val fresh = withContext(Dispatchers.IO) { runCatching { WeatherApi.fetchHere(ctx) }.getOrNull() }
@@ -101,7 +97,7 @@ fun HomeScreen(go: (Route) -> Unit) {
         }
     }
 
-    // ৬৪ জেলার আবহাওয়া: একটি রিকোয়েস্টে সব জেলা, প্রতি ১০ মিনিটে নতুন করে আনা হয়
+    // ৬৪ জেলা: একটি রিকোয়েস্টে সব, প্রতি ১০ মিনিটে নতুন করে
     LaunchedEffect(Unit) {
         while (true) {
             val fresh = withContext(Dispatchers.IO) { runCatching { WeatherApi.fetchDistricts() }.getOrNull() }
@@ -119,36 +115,32 @@ fun HomeScreen(go: (Route) -> Unit) {
     }
 
     Box(Modifier.fillMaxSize()) {
-        VideoBackground(Modifier.fillMaxSize())
+        StarField()
 
         Column(
             Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp)
-                .padding(top = 10.dp, bottom = 24.dp)
+                .padding(horizontal = 14.dp)
+                .padding(top = 8.dp, bottom = 24.dp)
         ) {
-            Reveal(0) { WeatherSlot(all, here, idx) }
+            // ১. একদম উপরে ছোট আবহাওয়ার বক্স
+            Reveal(0) { WeatherBox(all, here, idx) }
 
-            Spacer(Modifier.height(22.dp))
-            Reveal(1) { ProfileCard(onClick = { go(Route.Profile) }) }
+            Spacer(Modifier.height(12.dp))
 
-            Spacer(Modifier.height(20.dp))
-            Reveal(2) {
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    AiOrb { go(Route.Chat()) }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "এআই-তে ক্লিক করুন",
-                        color = Muted,
-                        fontSize = 14.sp,
-                        modifier = Modifier.clickable { go(Route.Chat()) }
-                    )
-                }
-            }
+            // ২. সোহান ভাইয়ের বক্স: ভিডিও ব্যাকগ্রাউন্ড, মাঝখানে গোল ছবি, নিচে বাণী ও অ্যাবাউট
+            Reveal(1) { ProfileBox(onAbout = { go(Route.Profile) }) }
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(14.dp))
+
+            // ৩. লম্বা চ্যাট বাটন
+            Reveal(2) { ChatBox(onClick = { go(Route.Chat()) }) }
+
+            Spacer(Modifier.height(14.dp))
+
+            // ৪. ফিচার গ্রিড
             Reveal(3) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     FeatureCard("ছবি তৈরি করুন", Icons.Filled.Photo, Color(0xFF818CF8), Modifier.weight(1f)) { go(Route.Chat(mode = "image")) }
@@ -168,70 +160,58 @@ fun HomeScreen(go: (Route) -> Unit) {
     }
 }
 
-/** উপরের আবহাওয়া কার্ড: ৬৪ জেলা ইন-আউট অ্যানিমেশনে ঘুরবে, নিচে আপনার অবস্থান। */
+/** উপরের ছোট আবহাওয়ার বক্স: ৬৪ জেলা ইন-আউট অ্যানিমেশনে ঘোরে, নিচে আপনার অবস্থান। */
 @Composable
-fun WeatherSlot(all: List<DistrictWeather>, here: HereWeather?, idx: Int) {
-    GlowBorder(Modifier.fillMaxWidth(), radius = 22.dp) {
-        Column(Modifier.padding(16.dp)) {
-            if (all.isEmpty()) {
-                Text("জেলার আবহাওয়া লোড হচ্ছে…", color = Muted, fontSize = 14.sp)
-            } else {
-                val i = idx % all.size
-                AnimatedContent(
-                    targetState = i,
-                    transitionSpec = {
-                        (slideInHorizontally(tween(450)) { it / 3 } + fadeIn(tween(450))) togetherWith
-                                (slideOutHorizontally(tween(350)) { -it / 3 } + fadeOut(tween(300)))
-                    },
-                    label = "district"
-                ) { k ->
-                    val dw = all[k]
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(dw.district.name + " জেলা", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                            Spacer(Modifier.weight(1f))
-                            Text("${(k + 1).bn()}/${all.size.bn()}", color = Muted, fontSize = 12.sp)
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "${dw.weather.temp.bn()}°C",
-                                color = Color.White,
-                                fontSize = 38.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Column {
-                                Text(dw.weather.label, color = Muted, fontSize = 13.sp)
-                                Text(
-                                    "সর্বোচ্চ ${dw.weather.max.bn()}° · সর্বনিম্ন ${dw.weather.min.bn()}°",
-                                    color = Muted,
-                                    fontSize = 12.sp
-                                )
-                            }
-                        }
+fun WeatherBox(all: List<DistrictWeather>, here: HereWeather?, idx: Int) {
+    GlowBorder(Modifier.fillMaxWidth(), radius = 14.dp) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Cloud, null, tint = Color(0xFFCBD5E1), modifier = Modifier.size(26.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                if (all.isEmpty()) {
+                    Text("জেলার আবহাওয়া লোড হচ্ছে…", color = Muted, fontSize = 12.sp)
+                } else {
+                    val i = idx % all.size
+                    AnimatedContent(
+                        targetState = i,
+                        transitionSpec = {
+                            (slideInHorizontally(tween(400)) { it / 3 } + fadeIn(tween(400))) togetherWith
+                                    (slideOutHorizontally(tween(300)) { -it / 3 } + fadeOut(tween(250)))
+                        },
+                        label = "district"
+                    ) { k ->
+                        val dw = all[k]
+                        Text(
+                            "${dw.district.name} ${dw.weather.temp.bn()}°C · ${dw.weather.label} · " +
+                                    "সর্বোচ্চ ${dw.weather.max.bn()}° সর্বনিম্ন ${dw.weather.min.bn()}°",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            maxLines = 1
+                        )
                     }
                 }
+                val h = here
+                Text(
+                    if (h == null) "আপনার অবস্থান: লোড হচ্ছে…"
+                    else "আপনার অবস্থান: ${h.nearest.name}${if (h.hasGps) "" else " (ডিফল্ট)"} · ${h.weather.temp.bn()}°C",
+                    color = Cyan,
+                    fontSize = 11.sp,
+                    maxLines = 1
+                )
             }
-
-            Spacer(Modifier.height(12.dp))
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Cyan.copy(alpha = 0.2f)))
-            Spacer(Modifier.height(8.dp))
-            val h = here
-            Text(
-                if (h == null) "আপনার অবস্থান: লোড হচ্ছে…"
-                else "আপনার অবস্থান: ${h.nearest.name}${if (h.hasGps) "" else " (ডিফল্ট)"} · " +
-                        "${h.weather.temp.bn()}°C ${h.weather.label}",
-                color = Cyan,
-                fontSize = 12.sp
-            )
         }
     }
 }
 
-/** প্রোফাইল কার্ড: ছবি, নাম, স্ট্যাটাস, আর প্রতি সেকেন্ডে বদলানো জ্ঞানের বাণী। */
+/**
+ * সোহান ভাইয়ের বক্স: পিছনে ভিডিও (চললে ঝর্ণার দৃশ্য), মাঝখানে গোল ছবি,
+ * নিচে বাণী (প্রতি ২ সেকেন্ডে বদলায়) এবং "অ্যাবাউটে যান" বাটন।
+ */
 @Composable
-fun ProfileCard(onClick: () -> Unit) {
+fun ProfileBox(onAbout: () -> Unit) {
     val quotes = SohanProfile.quotes
     var q by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
@@ -241,88 +221,84 @@ fun ProfileCard(onClick: () -> Unit) {
         }
     }
 
-    GlowBorder(Modifier.fillMaxWidth().clickable(onClick = onClick), radius = 22.dp) {
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SohanPhoto(64.dp)
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
-                    ShimmerText(SohanProfile.name, 18.sp)
-                    Text(SohanProfile.headline, color = Muted, fontSize = 13.sp)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(400.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .border(1.dp, Cyan.copy(alpha = 0.35f), RoundedCornerShape(24.dp))
+    ) {
+        VideoBackground(Modifier.fillMaxSize())
+
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // মাঝখানে গোল ছবি
+            SohanPhoto(132.dp)
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                ShimmerText(SohanProfile.name, 22.sp)
+                Spacer(Modifier.height(2.dp))
+                Text(SohanProfile.headline, color = Color.White, fontSize = 13.sp, textAlign = TextAlign.Center)
+            }
+
+            // বাণী: প্রতি ২ সেকেন্ডে এসে চলে যায়
+            Box(Modifier.fillMaxWidth().height(56.dp), contentAlignment = Alignment.Center) {
+                AnimatedContent(
+                    targetState = q,
+                    transitionSpec = {
+                        (fadeIn(tween(600)) + slideInVertically(tween(600)) { it / 3 }) togetherWith
+                                (fadeOut(tween(300)) + slideOutVertically(tween(300)) { -it / 3 })
+                    },
+                    label = "quote"
+                ) { k ->
+                    Text(
+                        quotes[k],
+                        color = Color(0xFFE9D5FF),
+                        fontSize = 15.sp,
+                        fontStyle = FontStyle.Italic,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 22.sp
+                    )
                 }
-                Icon(Icons.Filled.ChevronRight, null, tint = Cyan)
             }
-            Spacer(Modifier.height(12.dp))
-            Text("জ্ঞানের বাণী", color = Color(0xFFFBBF24), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(4.dp))
-            AnimatedContent(
-                targetState = q,
-                transitionSpec = {
-                    (fadeIn(tween(600)) + slideInVertically(tween(600)) { it / 3 }) togetherWith
-                            (fadeOut(tween(300)) + slideOutVertically(tween(300)) { -it / 3 })
-                },
-                label = "quote"
-            ) { k ->
-                Text(
-                    quotes[k],
-                    color = Color(0xFFC4B5FD),
-                    fontSize = 14.sp,
-                    fontStyle = FontStyle.Italic,
-                    lineHeight = 20.sp
-                )
+
+            // অ্যাবাউট বাটন
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .border(1.dp, Cyan, RoundedCornerShape(50))
+                    .background(Night.copy(alpha = 0.55f))
+                    .clickable(onClick = onAbout)
+                    .padding(horizontal = 22.dp, vertical = 9.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("অ্যাবাউটে যান", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Filled.ChevronRight, null, tint = Cyan, modifier = Modifier.size(18.dp))
+                }
             }
-            Spacer(Modifier.height(10.dp))
-            Text("বিস্তারিত জানতে ট্যাপ করুন", color = Cyan, fontSize = 11.sp)
         }
     }
 }
 
-/**
- * এআই আইকন (Claude-এর মতো): একটি স্পার্কল যা আস্তে নিঃশ্বাস নেয় ও ধীরে ঘোরে।
- * ছোট করা হয়েছে (১২০ dp)।
- */
+/** লম্বা চ্যাট বাটন: "এআই এর সাথে চ্যাট করতে এখানে ক্লিক করুন"। */
 @Composable
-fun AiOrb(onClick: () -> Unit) {
-    val tr = rememberInfiniteTransition(label = "orb")
-    val breathe by tr.animateFloat(
-        0.9f, 1.06f,
-        infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "breathe"
-    )
-    val spin by tr.animateFloat(
-        -10f, 10f,
-        infiniteRepeatable(tween(4000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "spin"
-    )
-    Box(Modifier.size(120.dp).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.fillMaxSize()) {
-            val c = Offset(size.width / 2f, size.height / 2f)
-            val r = size.minDimension / 2f * breathe
-            drawCircle(
-                Brush.radialGradient(listOf(Color(0x55F97316), Color.Transparent), center = c, radius = r),
-                radius = r,
-                center = c
+fun ChatBox(onClick: () -> Unit) {
+    GlowBorder(Modifier.fillMaxWidth().clickable(onClick = onClick), radius = 20.dp) {
+        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "এআই এর সাথে চ্যাট করতে এখানে ক্লিক করুন",
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
             )
-            rotate(spin, pivot = c) {
-                val s = size.minDimension * 0.36f * breathe
-                val k = s * 0.14f
-                val p = Path().apply {
-                    moveTo(c.x, c.y - s)
-                    quadraticTo(c.x + k, c.y - k, c.x + s, c.y)
-                    quadraticTo(c.x + k, c.y + k, c.x, c.y + s)
-                    quadraticTo(c.x - k, c.y + k, c.x - s, c.y)
-                    quadraticTo(c.x - k, c.y - k, c.x, c.y - s)
-                    close()
-                }
-                drawPath(
-                    p,
-                    Brush.linearGradient(
-                        listOf(Color(0xFFFB923C), Color(0xFFF472B6), Color(0xFF8B5CF6)),
-                        start = Offset(c.x - s, c.y - s),
-                        end = Offset(c.x + s, c.y + s)
-                    )
-                )
-            }
+            Icon(Icons.Filled.ChevronRight, null, tint = Cyan)
         }
     }
 }
