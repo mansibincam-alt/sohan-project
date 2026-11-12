@@ -1,6 +1,7 @@
 package com.sohanbhai.app
 
 import android.Manifest
+import android.os.Build
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -77,6 +78,14 @@ fun HomeScreen(go: (Route) -> Unit) {
     var here by remember { mutableStateOf<HereWeather?>(null) }
     var all by remember { mutableStateOf<List<DistrictWeather>>(emptyList()) }
     var idx by remember { mutableIntStateOf(0) }
+    var showWelcome by remember { mutableStateOf(!Prefs.seen(ctx, Prefs.KEY_WELCOME)) }
+    val notifPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    // প্রতিবার অ্যাপ খুললে একবার: লোডিং শেষ হয়ে হোমে আসার ১ সেকেন্ড পর স্বাগত ভয়েস
+    LaunchedEffect(Unit) {
+        delay(1_000)
+        WelcomeVoice.playOncePerLaunch(ctx)
+    }
 
     val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     LaunchedEffect(Unit) {
@@ -115,7 +124,22 @@ fun HomeScreen(go: (Route) -> Unit) {
     }
 
     Box(Modifier.fillMaxSize()) {
-        StarField()
+        // পুরো স্ক্রিনে ঝর্ণার ভিডিও ব্যাকগ্রাউন্ড
+        VideoBackground(Modifier.fillMaxSize())
+
+        // প্রথমবার: ওয়েলকাম নোট (ওকে বাটনসহ)
+        if (showWelcome) {
+            WelcomeDialog(onOk = {
+                Prefs.markSeen(ctx, Prefs.KEY_WELCOME)
+                showWelcome = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) !=
+                    PackageManager.PERMISSION_GRANTED
+                ) {
+                    notifPerm.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            })
+        }
 
         Column(
             Modifier
@@ -207,7 +231,7 @@ fun WeatherBox(all: List<DistrictWeather>, here: HereWeather?, idx: Int) {
 }
 
 /**
- * সোহান ভাইয়ের বক্স: পিছনে ভিডিও (চললে ঝর্ণার দৃশ্য), মাঝখানে গোল ছবি,
+ * সোহান ভাইয়ের বক্স: পিছনে পুরো স্ক্রিনের ভিডিও দেখা যায়, মাঝখানে গোল ছবি,
  * নিচে বাণী (প্রতি ২ সেকেন্ডে বদলায়) এবং "অ্যাবাউটে যান" বাটন।
  */
 @Composable
@@ -221,14 +245,15 @@ fun ProfileBox(onAbout: () -> Unit) {
         }
     }
 
+    // ভিডিও এখন পুরো স্ক্রিনের ব্যাকগ্রাউন্ড; এই বক্স তার উপর একটি স্বচ্ছ কার্ড
     Box(
         Modifier
             .fillMaxWidth()
             .height(400.dp)
             .clip(RoundedCornerShape(24.dp))
+            .background(Night.copy(alpha = 0.45f))
             .border(1.dp, Cyan.copy(alpha = 0.35f), RoundedCornerShape(24.dp))
     ) {
-        VideoBackground(Modifier.fillMaxSize())
 
         Column(
             Modifier

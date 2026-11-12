@@ -30,7 +30,12 @@ object Store {
     private var file: File? = null
     private var imageDir: File? = null
 
+    private var inited = false
+
+    /** একবারই লোড হয়; অ্যাপ ও ব্যাকগ্রাউন্ড সার্ভিস দুই জায়গা থেকেই ডাকা যায়। */
     fun init(ctx: Context) {
+        if (inited) return
+        inited = true
         file = File(ctx.filesDir, "history.json")
         imageDir = File(ctx.filesDir, "images").apply { mkdirs() }
         val f = file ?: return

@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -22,12 +22,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +41,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -48,45 +50,64 @@ fun ProfileScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
 
     Box(Modifier.fillMaxSize()) {
-        StarField()
+        // পুরো স্ক্রিনে ঝর্ণার ভিডিও: উপর থেকে নিচ পর্যন্ত
+        VideoBackground(Modifier.fillMaxSize())
+
         Column(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 32.dp)
         ) {
-            // কভার: প্রাকৃতিক দৃশ্য, বাঁয়ে বাটন, ডানে লোগো
-            Box(Modifier.fillMaxWidth().height(230.dp)) {
-                VideoBackground(Modifier.fillMaxSize())
-                Box(Modifier.statusBarsPadding().padding(12.dp)) {
-                    IconCircle(Icons.Filled.ArrowBack, "back", onBack)
-                }
+            // উপরের বার: বাঁয়ে বাটন, ডানে লোগো
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                IconCircle(Icons.Filled.ArrowBack, "back", onBack)
                 Image(
                     painter = painterResource(R.drawable.sohan_logo),
                     contentDescription = "Sohan Bhai AI logo",
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .statusBarsPadding()
-                        .padding(12.dp)
                         .size(64.dp)
                         .clip(RoundedCornerShape(12.dp)),
                     contentScale = ContentScale.Fit
                 )
             }
 
-            Column(Modifier.padding(horizontal = 18.dp)) {
-                // বড় গোল ছবি কভারের উপরে ভেসে থাকে (১৮০ dp); লেআউটে জায়গা নেয় ৯০ dp
-                Box(Modifier.fillMaxWidth().height(90.dp)) {
-                    SohanPhoto(180.dp, modifier = Modifier.offset(y = (-90).dp))
-                }
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.height(12.dp))
 
+                // মাঝখানে গোল ছবি, নিচে নাম ও পরিচিতি
                 Reveal(0) {
-                    Column {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        SohanPhoto(170.dp)
+                        Spacer(Modifier.height(16.dp))
                         ShimmerText(SohanProfile.name, 26.sp)
                         Spacer(Modifier.height(2.dp))
-                        Text(SohanProfile.fullName, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            SohanProfile.fullName,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center
+                        )
                         Spacer(Modifier.height(4.dp))
-                        Text(SohanProfile.headline, color = Muted, fontSize = 14.sp)
+                        Text(
+                            SohanProfile.headline,
+                            color = Muted,
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center
+                        )
                         Spacer(Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.LocationOn, null, tint = Muted, modifier = Modifier.size(14.dp))
@@ -96,14 +117,14 @@ fun ProfileScreen(onBack: () -> Unit) {
                     }
                 }
 
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(22.dp))
                 Reveal(1) {
                     InfoCard("পরিচয়") {
-                        InfoRow(Icons.Filled.Person, "পরিচয়", SohanProfile.identity)
-                        InfoRow(Icons.Filled.People, "পদবি", "${SohanProfile.designation} · ${SohanProfile.area}")
-                        InfoRow(Icons.Filled.People, "সংগঠন", SohanProfile.org)
-                        InfoRow(Icons.Filled.LocationOn, "থাকেন", SohanProfile.location)
-                        InfoRow(Icons.Filled.Favorite, "আগ্রহ", SohanProfile.interests.joinToString(" · "))
+                        InfoRow(Icons.Filled.MenuBook, Color(0xFF38BDF8), "পরিচয়", SohanProfile.identity)
+                        InfoRow(Icons.Filled.Badge, Color(0xFFA78BFA), "পদবি", "${SohanProfile.designation} · ${SohanProfile.area}")
+                        InfoRow(Icons.Filled.Groups, Color(0xFF34D399), "সংগঠন", SohanProfile.org)
+                        InfoRow(Icons.Filled.Home, Color(0xFFFBBF24), "থাকেন", SohanProfile.location)
+                        InfoRow(Icons.Filled.Favorite, Color(0xFFF472B6), "আগ্রহ", SohanProfile.interests.joinToString(" · "))
                     }
                 }
 
@@ -175,14 +196,29 @@ private fun InfoCard(title: String, content: @Composable () -> Unit) {
     }
 }
 
+/** আইকন (রঙিন গোল-কোণ বাক্সে) + ছোট লেবেল + বড় লেখা। PNG লোগো নয়, Material আইকন। */
 @Composable
-private fun InfoRow(icon: ImageVector, label: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.Top) {
-        Icon(icon, null, tint = Muted, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(10.dp))
-        Column {
+private fun InfoRow(icon: ImageVector, tint: Color, label: String, value: String) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(tint.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
             Text(label, color = Muted, fontSize = 12.sp)
-            Text(value, color = Color.White, fontSize = 14.sp)
+            Spacer(Modifier.height(2.dp))
+            Text(value, color = Color.White, fontSize = 15.sp, lineHeight = 22.sp)
         }
     }
 }

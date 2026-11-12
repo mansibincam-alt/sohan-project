@@ -172,10 +172,11 @@ object Gemini {
     }
 
     /** Pollinations থেকে ফ্রি ছবি (কোনো key লাগে না)। */
-    private fun pollinationsImage(prompt: String): ByteArray {
+    private fun pollinationsImage(prompt: String, seed: Int?): ByteArray {
         val encoded = URLEncoder.encode(prompt, "UTF-8").replace("+", "%20")
+        val seedPart = if (seed != null) "&seed=$seed" else ""
         val req = Request.Builder()
-            .url("https://image.pollinations.ai/prompt/$encoded?width=1024&height=1024")
+            .url("https://image.pollinations.ai/prompt/$encoded?width=1024&height=1024$seedPart")
             .get()
             .build()
         http.newCall(req).execute().use { resp ->
@@ -193,11 +194,12 @@ object Gemini {
         history: List<ChatMessage>,
         prompt: String,
         attachment: Attachment?,
-        wantImage: Boolean
+        wantImage: Boolean,
+        seed: Int? = null
     ): Pair<String, ByteArray?> {
         // নতুন ছবি তৈরি সবসময় Pollinations দিয়ে (কোনো key লাগে না)।
         if (wantImage && attachment == null) {
-            return "" to pollinationsImage(prompt)
+            return "" to pollinationsImage(prompt, seed)
         }
         val body = buildBody(history, prompt, attachment, wantImage)
         return if (wantImage) {

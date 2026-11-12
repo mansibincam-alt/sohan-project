@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -65,6 +66,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -139,10 +141,6 @@ private val toolPrefix = mapOf(
     "pdf" to ""
 )
 
-/** ছবি তৈরির ৩০ সেকেন্ড বিরতি: শেষ অনুরোধের সময় এখানে থাকে। */
-private const val IMAGE_COOLDOWN_MS = 30_000L
-private var lastImageAt = 0L
-
 private fun readAttachment(ctx: Context, uri: Uri): Attachment? {
     val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
     val mime = ctx.contentResolver.getType(uri) ?: "application/octet-stream"
@@ -166,17 +164,9 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     var sheetOpen by remember { mutableStateOf(false) }
-    var cooldownLeft by remember { mutableIntStateOf(0) }
+    var imageCount by remember { mutableIntStateOf(1) }
+    var showRules by remember { mutableStateOf(!Prefs.seen(ctx, Prefs.KEY_CHAT_RULES)) }
     val listState = rememberLazyListState()
-
-    // ছবি তৈরির ৩০ সেকেন্ড কাউন্টডাউন
-    LaunchedEffect(busy) {
-        while (true) {
-            val left = ((lastImageAt + IMAGE_COOLDOWN_MS - System.currentTimeMillis()) / 1000).toInt()
-            cooldownLeft = if (left > 0) left else 0
-            delay(500)
-        }
-    }
 
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) readAttachment(ctx, uri)?.let { attachment = it }
@@ -222,12 +212,14 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
         val t = tool
         val isImage = t == "image" || t == "edit"
 
-        if (isImage) {
-            val left = ((lastImageAt + IMAGE_COOLDOWN_MS - System.currentTimeMillis()) / 1000).toInt()
-            if (left > 0) {
-                notice = "ছবি তৈরির আগে ${left} সেকেন্ড অপেক্ষা করুন"
-                return
-            }
+        // ছবি তৈরি চলাকালে নতুন ছবি বানানো যাবে না, তবে চ্যাট চলবে
+        if (isImage && ImageJobs.isActive) {
+            notice = "ছবি তৈরি চলছে। শেষ হলে আবার চেষ্টা করুন। এর মধ্যে এআই-এর সাথে চ্যাট করা যাবে"
+            return
+        }
+        if (t == "image" && text.isEmpty()) {
+            notice = "কী ছবি চান তা লিখুন"
+            return
         }
         if (t == "edit" && att?.mime?.startsWith("image/") != true) {
             notice = "আগে একটি ছবি বেছে নিন"
@@ -246,9 +238,14 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
         input = ""
         attachment = null
         notice = null
-        busy = true
-        if (isImage) lastImageAt = System.currentTimeMillis()
 
+        // ছবি তৈরি: ব্যাকগ্রাউন্ড কিউতে যায়, চ্যাট আটকায় না
+        if (t == "image") {
+            ImageJobs.start(ctx, conv, promptText, imageCount)
+            return
+        }
+
+        busy = true
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching { Gemini.generate(ctx, history, promptText, att, isImage) }
@@ -337,6 +334,8 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
                     }
                 }
 
+                ImageJobs.batch.value?.let { BatchBanner(it) }
+
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
@@ -375,6 +374,10 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
                             Icon(Icons.Filled.Close, "remove tool", tint = Muted, modifier = Modifier.size(16.dp))
                         }
                     }
+                }
+
+                if (tool == "image") {
+                    ImageCountRow(imageCount) { imageCount = it.coerceIn(1, ImageJobs.MAX_COUNT) }
                 }
 
                 // সংযুক্ত ফাইল
@@ -518,6 +521,13 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
                 Spacer(Modifier.height(12.dp))
             }
         }
+    }
+
+    if (showRules) {
+        ChatRulesDialog(onOk = {
+            Prefs.markSeen(ctx, Prefs.KEY_CHAT_RULES)
+            showRules = false
+        })
     }
 
     if (confirmClear) {
@@ -827,6 +837,79 @@ fun DeveloperCard() {
             color = Color(0xFFC4B5FD),
             fontSize = 12.sp,
             modifier = Modifier.padding(top = 6.dp)
+        )
+    }
+}
+
+/** চ্যাটের উপরে-নিচে: ছবির সংখ্যা (১ থেকে ৫) বাছাই। */
+@Composable
+fun ImageCountRow(count: Int, onChange: (Int) -> Unit) {
+    Row(
+        Modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(50))
+            .background(CardBg)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("ছবির সংখ্যা", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
+        Spacer(Modifier.weight(1f))
+        IconButton(
+            onClick = { onChange(count - 1) },
+            enabled = count > 1,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(Icons.Filled.Remove, "কমান", tint = if (count > 1) Cyan else Muted)
+        }
+        Text(
+            bnDigits(count),
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        )
+        IconButton(
+            onClick = { onChange(count + 1) },
+            enabled = count < ImageJobs.MAX_COUNT,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(Icons.Filled.Add, "বাড়ান", tint = if (count < ImageJobs.MAX_COUNT) Cyan else Muted)
+        }
+    }
+}
+
+/** ছবি তৈরির অগ্রগতি: স্ক্রিনের উপরের দিকে, সাথে শতাংশ। */
+@Composable
+fun BatchBanner(state: BatchState) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(CardBg)
+            .border(1.dp, Violet.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "ছবি তৈরি হচ্ছে · ${bnDigits(state.finished)}/${bnDigits(state.total)}",
+                color = Color.White,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                "${bnDigits(state.percent)}%",
+                color = Cyan,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        LinearProgressIndicator(
+            progress = { state.percent / 100f },
+            modifier = Modifier.fillMaxWidth(),
+            color = Cyan,
+            trackColor = Night
         )
     }
 }
