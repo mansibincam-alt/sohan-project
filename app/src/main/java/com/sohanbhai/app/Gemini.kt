@@ -2,12 +2,14 @@ package com.sohanbhai.app
 
 import android.content.Context
 import android.util.Base64
+import android.util.Log
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 object Gemini {
@@ -57,6 +59,14 @@ object Gemini {
             .put("data", Base64.encodeToString(bytes, Base64.NO_WRAP))
     )
 
+    /** ব্যবহারকারীকে দেখানোর ছোট বার্তা। বিস্তারিত তথ্য শুধু Logcat-এ যায়। */
+    private fun friendly(code: Int): String = when (code) {
+        429 -> "এখন ব্যবহারের সীমা শেষ হয়েছে। কিছুক্ষণ পরে আবার চেষ্টা করুন।"
+        400, 401, 403 -> "API key ঠিক নেই বা অনুমতি নেই।"
+        404 -> "এই মডেলটি এখন পাওয়া যাচ্ছে না।"
+        else -> "এখন উত্তর দেওয়া যাচ্ছে না, আবার চেষ্টা করুন।"
+    }
+
     private fun post(key: String, model: String, body: JSONObject): JSONObject {
         val req = Request.Builder()
             .url("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
@@ -66,9 +76,10 @@ object Gemini {
         http.newCall(req).execute().use { resp ->
             val raw = resp.body?.string().orEmpty()
             if (!resp.isSuccessful) {
-                val msg = runCatching { JSONObject(raw).getJSONObject("error").getString("message") }
+                val detail = runCatching { JSONObject(raw).getJSONObject("error").getString("message") }
                     .getOrDefault(raw.take(200))
-                throw IllegalStateException("[$model] ${resp.code}: $msg")
+                Log.w("Gemini", "[$model] ${resp.code}: $detail")
+                throw IllegalStateException(friendly(resp.code))
             }
             return JSONObject(raw)
         }
@@ -160,6 +171,22 @@ object Gemini {
         throw lastError
     }
 
+    /** Pollinations থেকে ফ্রি ছবি (কোনো key লাগে না)। */
+    private fun pollinationsImage(prompt: String): ByteArray {
+        val encoded = URLEncoder.encode(prompt, "UTF-8").replace("+", "%20")
+        val req = Request.Builder()
+            .url("https://image.pollinations.ai/prompt/$encoded?width=1024&height=1024")
+            .get()
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val bytes = resp.body?.bytes()
+            if (!resp.isSuccessful || bytes == null || bytes.isEmpty()) {
+                throw IllegalStateException("ছবি এখন তৈরি করা যাচ্ছে না। কিছুক্ষণ পরে আবার চেষ্টা করুন।")
+            }
+            return bytes
+        }
+    }
+
     /** চ্যাট (wantImage = false) বা ছবি তৈরি/এডিট (wantImage = true)। */
     fun generate(
         ctx: Context,
@@ -168,8 +195,13 @@ object Gemini {
         attachment: Attachment?,
         wantImage: Boolean
     ): Pair<String, ByteArray?> {
+        // নতুন ছবি তৈরি সবসময় Pollinations দিয়ে (কোনো key লাগে না)।
+        if (wantImage && attachment == null) {
+            return "" to pollinationsImage(prompt)
+        }
         val body = buildBody(history, prompt, attachment, wantImage)
         return if (wantImage) {
+            // ছবি এডিট (ছবি আপলোড করা) শুধু Gemini পারে।
             runWithFailover(ctx, IMAGE_MODELS, body, needImage = true)
         } else {
             runWithFailover(ctx, TEXT_MODELS, body, needImage = false)
