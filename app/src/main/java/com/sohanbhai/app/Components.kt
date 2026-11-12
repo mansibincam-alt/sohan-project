@@ -12,7 +12,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
@@ -174,14 +178,27 @@ fun AiLogo(box: Dp) {
 
 @Composable
 fun AiAvatar() {
-    Box(
+    SohanPhoto(32.dp, ring = false)
+}
+
+/** সোহান ভাইয়ের প্রোফাইল ছবি (গোল)। */
+@Composable
+fun SohanPhoto(size: Dp, ring: Boolean = true, modifier: Modifier = Modifier) {
+    val ringMod = if (ring) {
+        Modifier.border(2.dp, Brush.linearGradient(listOf(Cyan, Violet, Color(0xFFEC4899))), CircleShape)
+    } else {
         Modifier
-            .size(32.dp)
-            .clip(CircleShape)
-            .background(Brush.linearGradient(listOf(Cyan, Violet))),
+    }
+    Box(
+        modifier.size(size).clip(CircleShape).then(ringMod),
         contentAlignment = Alignment.Center
     ) {
-        Icon(Icons.Filled.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(18.dp))
+        Image(
+            painter = painterResource(R.drawable.sohan_profile),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
     }
 }
 

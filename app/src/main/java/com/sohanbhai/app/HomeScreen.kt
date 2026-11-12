@@ -1,18 +1,25 @@
 package com.sohanbhai.app
 
 import android.Manifest
-import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,50 +29,38 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.AutoFixHigh
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Photo
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -73,41 +68,58 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 @Composable
 fun HomeScreen(go: (Route) -> Unit) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var weather by remember { mutableStateOf<Weather?>(null) }
+    var here by remember { mutableStateOf<HereWeather?>(null) }
+    var all by remember { mutableStateOf<List<DistrictWeather>>(emptyList()) }
+    var idx by remember { mutableIntStateOf(0) }
 
-    fun reload() {
-        scope.launch {
-            weather = withContext(Dispatchers.IO) { runCatching { WeatherApi.fetch(ctx) }.getOrNull() }
-        }
-    }
-
-    val permLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { reload() }
-
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     LaunchedEffect(Unit) {
         val granted = ContextCompat.checkSelfPermission(
             ctx, Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) reload() else permLauncher.launch(
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!granted) permLauncher.launch(
             arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
         )
     }
 
+    // নিজের অবস্থানের আবহাওয়া: প্রতি ১০ সেকেন্ডে অটো রিলোড
+    LaunchedEffect(Unit) {
+        while (true) {
+            val fresh = withContext(Dispatchers.IO) { runCatching { WeatherApi.fetchHere(ctx) }.getOrNull() }
+            if (fresh != null) here = fresh
+            delay(10_000)
+        }
+    }
+
+    // ৬৪ জেলার আবহাওয়া: একটি রিকোয়েস্টে সব জেলা, প্রতি ১০ মিনিটে নতুন করে আনা হয়
+    LaunchedEffect(Unit) {
+        while (true) {
+            val fresh = withContext(Dispatchers.IO) { runCatching { WeatherApi.fetchDistricts() }.getOrNull() }
+            if (fresh != null) all = fresh
+            delay(600_000)
+        }
+    }
+
+    // প্রতি ৪ সেকেন্ডে পরের জেলা
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(4_000)
+            idx = (idx + 1) % 64
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
-        StarField()
+        VideoBackground(Modifier.fillMaxSize())
 
         Column(
             Modifier
@@ -115,59 +127,29 @@ fun HomeScreen(go: (Route) -> Unit) {
                 .statusBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 18.dp)
-                .padding(bottom = 96.dp)
+                .padding(top = 10.dp, bottom = 24.dp)
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconCircle(Icons.Filled.Menu, "menu") {}
-                Spacer(Modifier.weight(1f))
-                Box {
-                    IconCircle(Icons.Filled.Notifications, "notifications") {}
-                    Box(
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(Color.Red)
+            Reveal(0) { WeatherSlot(all, here, idx) }
+
+            Spacer(Modifier.height(22.dp))
+            Reveal(1) { ProfileCard(onClick = { go(Route.Profile) }) }
+
+            Spacer(Modifier.height(20.dp))
+            Reveal(2) {
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    AiOrb { go(Route.Chat()) }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "এআই-তে ক্লিক করুন",
+                        color = Muted,
+                        fontSize = 14.sp,
+                        modifier = Modifier.clickable { go(Route.Chat()) }
                     )
                 }
             }
 
-            Spacer(Modifier.height(14.dp))
-            Reveal(0) {
-                Column {
-                    ShimmerText("সোহান ভাই", 30.sp)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("আপনার ব্যক্তিগত AI সহকারী", color = Muted, fontSize = 14.sp)
-                        Spacer(Modifier.width(6.dp))
-                        Icon(Icons.Filled.AutoAwesome, null, tint = Color(0xFFFBBF24), modifier = Modifier.size(16.dp))
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(18.dp))
-            Reveal(1) { ProfileCard(onClick = { go(Route.Profile) }) }
-
-            Spacer(Modifier.height(18.dp))
-            Reveal(2) {
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    AiOrb { go(Route.Chat()) }
-                }
-            }
+            Spacer(Modifier.height(20.dp))
             Reveal(3) {
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    GlowBorder(Modifier.clickable { go(Route.Chat()) }, radius = 50.dp) {
-                        Row(
-                            Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("এআই-তে ক্লিক করুন", color = Color.White, fontSize = 14.sp)
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(18.dp))
-            Reveal(4) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     FeatureCard("ছবি তৈরি করুন", Icons.Filled.Photo, Color(0xFF818CF8), Modifier.weight(1f)) { go(Route.Chat(mode = "image")) }
                     FeatureCard("চ্যাট করুন", Icons.Filled.Chat, Color(0xFF34D399), Modifier.weight(1f)) { go(Route.Chat()) }
@@ -175,120 +157,172 @@ fun HomeScreen(go: (Route) -> Unit) {
                 }
             }
             Spacer(Modifier.height(10.dp))
-            Reveal(5) {
+            Reveal(4) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     FeatureCard("অনুবাদ করুন", Icons.Filled.Translate, Color(0xFF38BDF8), Modifier.weight(1f)) { go(Route.Chat(mode = "translate")) }
                     FeatureCard("PDF পড়ুন", Icons.Filled.PictureAsPdf, Color(0xFFA78BFA), Modifier.weight(1f)) { go(Route.Chat(mode = "pdf")) }
                     FeatureCard("আরও ফিচার", Icons.Filled.Apps, Color(0xFF4ADE80), Modifier.weight(1f)) { go(Route.Chat()) }
                 }
             }
+        }
+    }
+}
 
-            Spacer(Modifier.height(18.dp))
-            Reveal(6) { WeatherCard(weather) { reload() } }
-
-            Spacer(Modifier.height(12.dp))
-            Reveal(7) {
-                GlowBorder(Modifier.fillMaxWidth(), radius = 18.dp) {
-                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Lightbulb, null, tint = Color(0xFFFBBF24), modifier = Modifier.size(30.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("জানেন কি?", color = Color(0xFF4ADE80), fontWeight = FontWeight.SemiBold)
-                            Text("নিয়মিত দোয়া ও ইবাদত আপনার জীবনে শান্তি আনে।", color = Muted, fontSize = 13.sp)
+/** উপরের আবহাওয়া কার্ড: ৬৪ জেলা ইন-আউট অ্যানিমেশনে ঘুরবে, নিচে আপনার অবস্থান। */
+@Composable
+fun WeatherSlot(all: List<DistrictWeather>, here: HereWeather?, idx: Int) {
+    GlowBorder(Modifier.fillMaxWidth(), radius = 22.dp) {
+        Column(Modifier.padding(16.dp)) {
+            if (all.isEmpty()) {
+                Text("জেলার আবহাওয়া লোড হচ্ছে…", color = Muted, fontSize = 14.sp)
+            } else {
+                val i = idx % all.size
+                AnimatedContent(
+                    targetState = i,
+                    transitionSpec = {
+                        (slideInHorizontally(tween(450)) { it / 3 } + fadeIn(tween(450))) togetherWith
+                                (slideOutHorizontally(tween(350)) { -it / 3 } + fadeOut(tween(300)))
+                    },
+                    label = "district"
+                ) { k ->
+                    val dw = all[k]
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(dw.district.name + " জেলা", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                            Spacer(Modifier.weight(1f))
+                            Text("${(k + 1).bn()}/${all.size.bn()}", color = Muted, fontSize = 12.sp)
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "${dw.weather.temp.bn()}°C",
+                                color = Color.White,
+                                fontSize = 38.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(dw.weather.label, color = Muted, fontSize = 13.sp)
+                                Text(
+                                    "সর্বোচ্চ ${dw.weather.max.bn()}° · সর্বনিম্ন ${dw.weather.min.bn()}°",
+                                    color = Muted,
+                                    fontSize = 12.sp
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
 
-        Row(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(12.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(CardBg)
-                .padding(vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceAround
-        ) {
-            NavItem("হোম", Icons.Filled.Home, true) {}
-            NavItem("এআই", Icons.Filled.AutoAwesome, false) { go(Route.Chat()) }
-            NavItem("প্রোফাইল", Icons.Filled.Person, false) { go(Route.Profile) }
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Cyan.copy(alpha = 0.2f)))
+            Spacer(Modifier.height(8.dp))
+            val h = here
+            Text(
+                if (h == null) "আপনার অবস্থান: লোড হচ্ছে…"
+                else "আপনার অবস্থান: ${h.nearest.name}${if (h.hasGps) "" else " (ডিফল্ট)"} · " +
+                        "${h.weather.temp.bn()}°C ${h.weather.label}",
+                color = Cyan,
+                fontSize = 12.sp
+            )
         }
     }
 }
 
-@Composable
-fun AiOrb(onClick: () -> Unit) {
-    val rot by rememberInfiniteTransition(label = "orb").animateFloat(
-        0f, 360f,
-        infiniteRepeatable(tween(7000, easing = LinearEasing)),
-        label = "rot"
-    )
-    Box(Modifier.size(200.dp).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-            rotate(rot) {
-                drawOval(
-                    Brush.linearGradient(listOf(Violet, Cyan)),
-                    topLeft = Offset(w * 0.05f, h * 0.3f),
-                    size = Size(w * 0.9f, h * 0.4f),
-                    style = Stroke(3.dp.toPx())
-                )
-            }
-            rotate(-rot * 0.6f) {
-                drawOval(
-                    Brush.linearGradient(listOf(Cyan, Violet)),
-                    topLeft = Offset(w * 0.2f, h * 0.1f),
-                    size = Size(w * 0.6f, h * 0.8f),
-                    style = Stroke(2.dp.toPx())
-                )
-            }
-        }
-        Box(
-            Modifier
-                .size(120.dp)
-                .clip(CircleShape)
-                .background(Brush.radialGradient(listOf(Cyan, Violet))),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Filled.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(56.dp))
-        }
-    }
-}
-
+/** প্রোফাইল কার্ড: ছবি, নাম, স্ট্যাটাস, আর প্রতি সেকেন্ডে বদলানো জ্ঞানের বাণী। */
 @Composable
 fun ProfileCard(onClick: () -> Unit) {
+    val quotes = SohanProfile.quotes
+    var q by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(2_000)
+            q = (q + 1) % quotes.size
+        }
+    }
+
     GlowBorder(Modifier.fillMaxWidth().clickable(onClick = onClick), radius = 22.dp) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(68.dp)
-                    .clip(CircleShape)
-                    .background(Brush.linearGradient(listOf(Color(0xFF065F46), Color(0xFF0E7490)))),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("স", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                ShimmerText(SohanProfile.name, 18.sp)
-                Text(SohanProfile.title + " | " + SohanProfile.org, color = Muted, fontSize = 12.sp)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.LocationOn, null, tint = Muted, modifier = Modifier.size(14.dp))
-                    Text(SohanProfile.location, color = Muted, fontSize = 12.sp)
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SohanPhoto(64.dp)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    ShimmerText(SohanProfile.name, 18.sp)
+                    Text(SohanProfile.headline, color = Muted, fontSize = 13.sp)
                 }
-                Text(
-                    SohanProfile.quote,
-                    color = Cyan.copy(alpha = 0.8f),
-                    fontSize = 12.sp,
-                    fontStyle = FontStyle.Italic
-                )
-                Text("বিস্তারিত দেখতে ট্যাপ করুন", color = Color(0xFFFBBF24), fontSize = 11.sp)
+                Icon(Icons.Filled.ChevronRight, null, tint = Cyan)
             }
-            Icon(Icons.Filled.ChevronRight, null, tint = Cyan)
+            Spacer(Modifier.height(12.dp))
+            Text("জ্ঞানের বাণী", color = Color(0xFFFBBF24), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            AnimatedContent(
+                targetState = q,
+                transitionSpec = {
+                    (fadeIn(tween(600)) + slideInVertically(tween(600)) { it / 3 }) togetherWith
+                            (fadeOut(tween(300)) + slideOutVertically(tween(300)) { -it / 3 })
+                },
+                label = "quote"
+            ) { k ->
+                Text(
+                    quotes[k],
+                    color = Color(0xFFC4B5FD),
+                    fontSize = 14.sp,
+                    fontStyle = FontStyle.Italic,
+                    lineHeight = 20.sp
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Text("বিস্তারিত জানতে ট্যাপ করুন", color = Cyan, fontSize = 11.sp)
+        }
+    }
+}
+
+/**
+ * এআই আইকন (Claude-এর মতো): একটি স্পার্কল যা আস্তে নিঃশ্বাস নেয় ও ধীরে ঘোরে।
+ * ছোট করা হয়েছে (১২০ dp)।
+ */
+@Composable
+fun AiOrb(onClick: () -> Unit) {
+    val tr = rememberInfiniteTransition(label = "orb")
+    val breathe by tr.animateFloat(
+        0.9f, 1.06f,
+        infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "breathe"
+    )
+    val spin by tr.animateFloat(
+        -10f, 10f,
+        infiniteRepeatable(tween(4000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "spin"
+    )
+    Box(Modifier.size(120.dp).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val c = Offset(size.width / 2f, size.height / 2f)
+            val r = size.minDimension / 2f * breathe
+            drawCircle(
+                Brush.radialGradient(listOf(Color(0x55F97316), Color.Transparent), center = c, radius = r),
+                radius = r,
+                center = c
+            )
+            rotate(spin, pivot = c) {
+                val s = size.minDimension * 0.36f * breathe
+                val k = s * 0.14f
+                val p = Path().apply {
+                    moveTo(c.x, c.y - s)
+                    quadraticTo(c.x + k, c.y - k, c.x + s, c.y)
+                    quadraticTo(c.x + k, c.y + k, c.x, c.y + s)
+                    quadraticTo(c.x - k, c.y + k, c.x - s, c.y)
+                    quadraticTo(c.x - k, c.y - k, c.x, c.y - s)
+                    close()
+                }
+                drawPath(
+                    p,
+                    Brush.linearGradient(
+                        listOf(Color(0xFFFB923C), Color(0xFFF472B6), Color(0xFF8B5CF6)),
+                        start = Offset(c.x - s, c.y - s),
+                        end = Offset(c.x + s, c.y + s)
+                    )
+                )
+            }
         }
     }
 }
@@ -313,44 +347,6 @@ fun FeatureCard(label: String, icon: ImageVector, tint: Color, modifier: Modifie
             )
             Spacer(Modifier.height(8.dp))
             Text(label, color = Color.White, fontSize = 13.sp, textAlign = TextAlign.Center)
-        }
-    }
-}
-
-@Composable
-fun NavItem(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
-    Column(
-        Modifier.clickable(onClick = onClick).padding(horizontal = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        val c = if (selected) Cyan else Muted
-        Icon(icon, label, tint = c)
-        Text(label, color = c, fontSize = 11.sp)
-    }
-}
-
-@Composable
-fun WeatherCard(w: Weather?, onRefresh: () -> Unit) {
-    GlowBorder(Modifier.fillMaxWidth(), radius = 20.dp) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Cloud, null, tint = Color(0xFFCBD5E1), modifier = Modifier.size(44.dp))
-            Spacer(Modifier.width(12.dp))
-            if (w == null) {
-                Text("আবহাওয়া লোড হচ্ছে…", color = Muted, modifier = Modifier.weight(1f))
-            } else {
-                Column(Modifier.weight(1f)) {
-                    Text("${w.temp}°C", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Bold)
-                    Text(w.label, color = Muted, fontSize = 13.sp)
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(w.place, color = Color.White, fontSize = 12.sp)
-                    Text("আজকের সর্বোচ্চ: ${w.max}°C", color = Muted, fontSize = 12.sp)
-                    Text("সর্বনিম্ন: ${w.min}°C", color = Muted, fontSize = 12.sp)
-                }
-            }
-            IconButton(onClick = onRefresh) {
-                Icon(Icons.Filled.Refresh, "refresh", tint = Cyan)
-            }
         }
     }
 }
