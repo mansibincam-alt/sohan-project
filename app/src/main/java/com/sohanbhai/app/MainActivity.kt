@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 
 sealed class Route {
+    object Splash : Route()
     object Home : Route()
     data class Chat(val mode: String = "chat", val conv: Conversation? = null) : Route()
     object Profile : Route()
@@ -28,11 +29,12 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun App() {
-    var route by remember { mutableStateOf<Route>(Route.Home) }
-    BackHandler(enabled = route != Route.Home) { route = Route.Home }
+    var route by remember { mutableStateOf<Route>(Route.Splash) }
+    BackHandler(enabled = route != Route.Home && route != Route.Splash) { route = Route.Home }
 
     val go: (Route) -> Unit = { route = it }
     when (val r = route) {
+        Route.Splash -> SplashScreen(onDone = { route = Route.Home })
         Route.Home -> HomeScreen(go)
         is Route.Chat -> ChatScreen(r.mode, r.conv, onBack = { route = Route.Home })
         Route.Profile -> ProfileScreen(onBack = { route = Route.Home })

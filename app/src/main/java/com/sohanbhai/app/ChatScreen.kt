@@ -2,8 +2,10 @@ package com.sohanbhai.app
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -41,7 +43,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
@@ -74,7 +75,6 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -113,7 +113,7 @@ val suggestionTools = listOf(
     ToolInfo("summarize", "সংক্ষেপ করুন", Icons.Filled.Description, Color(0xFF60A5FA), "মূল পয়েন্ট বের করুন")
 )
 
-/** অ্যাটাচ (+) বাটনের ফিচার শিটে যা যা থাকবে। */
+/** অ্যাটাচ (+) শিটে যা যা থাকবে। */
 private val allTools = listOf(
     ToolInfo("image", "ছবি তৈরি করুন", Icons.Filled.Photo, Color(0xFFA78BFA), "বর্ণনা লিখে ছবি বানান"),
     ToolInfo("edit", "ছবি এডিট করুন", Icons.Filled.AutoFixHigh, Color(0xFFFBBF24), "একটি ছবি বেছে নিয়ে বদলান"),
@@ -126,7 +126,7 @@ private val allTools = listOf(
 
 private val toolKeys = setOf("image", "edit", "pdf", "translate")
 
-/** প্রতিটি টুলের আগে যোগ হওয়া নির্দেশ, যাতে মডেল বোঝে কী করতে হবে। */
+/** প্রতিটি টুলের আগে যোগ হওয়া নির্দেশ। */
 private val toolPrefix = mapOf(
     "image" to "এই বর্ণনা অনুযায়ী একটি ছবি তৈরি করো: ",
     "edit" to "এই ছবিটি এডিট করে নতুন ছবি তৈরি করো: ",
@@ -136,6 +136,10 @@ private val toolPrefix = mapOf(
     "translate" to "নিচের লেখাটি অনুবাদ করো (বাংলা ↔ ইংরেজি): ",
     "pdf" to ""
 )
+
+/** ছবি তৈরির ৩০ সেকেন্ড বিরতি: শেষ অনুরোধের সময় এখানে থাকে। */
+private const val IMAGE_COOLDOWN_MS = 30_000L
+private var lastRequestAt = 0L
 
 private fun readAttachment(ctx: Context, uri: Uri): Attachment? {
     val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
@@ -155,17 +159,22 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
     var input by remember { mutableStateOf("") }
     var attachment by remember { mutableStateOf<Attachment?>(null) }
     var busy by remember { mutableStateOf(false) }
-    var transcribing by remember { mutableStateOf(false) }
-    var recording by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     var animId by remember { mutableStateOf<String?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     var sheetOpen by remember { mutableStateOf(false) }
-
-    val recorder = remember { VoiceRecorder() }
-    val levels by recorder.levels.collectAsState()
+    var cooldownLeft by remember { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
+
+    // ছবি তৈরির ৩০ সেকেন্ড কাউন্টডাউন
+    LaunchedEffect(busy) {
+        while (true) {
+            val left = ((lastRequestAt + IMAGE_COOLDOWN_MS - System.currentTimeMillis()) / 1000).toInt()
+            cooldownLeft = if (left > 0) left else 0
+            delay(500)
+        }
+    }
 
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) readAttachment(ctx, uri)?.let { attachment = it }
@@ -173,11 +182,18 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) readAttachment(ctx, uri)?.let { attachment = it }
     }
+
+    // মাইক্রোফোন: আগের মতো Google-এর ভয়েস রিকগনিশন
+    val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        val spoken = res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (!spoken.isNullOrBlank()) input = if (input.isBlank()) spoken else "$input $spoken"
+    }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
-            notice = null
-            recorder.start()
-            recording = true
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "bn-BD")
+            runCatching { micLauncher.launch(intent) }
         } else {
             notice = "মাইক্রোফোনের অনুমতি দিন"
         }
@@ -196,36 +212,27 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
         if (target >= 0) listState.animateScrollToItem(target)
     }
 
-    /** রেকর্ডিং বন্ধ করে; send = true হলে Gemini দিয়ে লেখায় রূপান্তর করে ইনপুটে বসায়। */
-    fun finishRecording(send: Boolean) {
-        recording = false
-        val wav = recorder.stop()
-        if (!send) return
-        transcribing = true
-        scope.launch {
-            val res = withContext(Dispatchers.IO) { runCatching { Gemini.transcribe(ctx, wav) } }
-            transcribing = false
-            res.fold(
-                onSuccess = { text ->
-                    if (text.isNotBlank()) input = if (input.isBlank()) text else "$input $text"
-                },
-                onFailure = { notice = it.message ?: "শোনা যায়নি, আবার চেষ্টা করুন" }
-            )
-        }
-    }
-
     fun send() {
         val text = input.trim()
         val att = attachment
         if ((text.isEmpty() && att == null) || busy) return
 
         val t = tool
+        val isImage = t == "image" || t == "edit"
+
+        if (isImage) {
+            val left = ((lastRequestAt + IMAGE_COOLDOWN_MS - System.currentTimeMillis()) / 1000).toInt()
+            if (left > 0) {
+                notice = "ছবি তৈরির আগে ${left} সেকেন্ড অপেক্ষা করুন"
+                return
+            }
+        }
         if (t == "edit" && att?.mime?.startsWith("image/") != true) {
             notice = "আগে একটি ছবি বেছে নিন"
             imagePicker.launch("image/*")
             return
         }
-        val isImage = t == "image" || t == "edit"
+
         val promptText = (toolPrefix[t].orEmpty() + text).ifEmpty {
             if (isImage) "ছবিটি এডিট করো" else "এই ফাইলটি বিশ্লেষণ করো"
         }
@@ -238,6 +245,7 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
         attachment = null
         notice = null
         busy = true
+        lastRequestAt = System.currentTimeMillis()
 
         scope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -282,8 +290,8 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
             }
         }
     ) {
-        Box(Modifier.fillMaxSize()) {
-            StarField()
+        // চ্যাটের ব্যাকগ্রাউন্ড: সাদামাটা গাঢ় রঙ
+        Box(Modifier.fillMaxSize().background(Night)) {
             Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
 
                 // উপরে: ইতিহাস (বাঁয়ে), শিরোনাম (মাঝে), ৩-ডট মেনু (ডানে)
@@ -332,7 +340,7 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
                         .weight(1f)
                         .fillMaxWidth(),
                     contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     if (conv.messages.isEmpty()) {
                         item { Welcome(onPick = { info -> tool = info.key }) }
@@ -353,7 +361,7 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
                             .padding(horizontal = 16.dp, vertical = 4.dp)
                             .clip(RoundedCornerShape(50))
                             .background(CardBg)
-                            .border(1.dp, activeTool.color.copy(alpha = 0.5f), RoundedCornerShape(50))
+                            .border(1.dp, activeTool.color.copy(alpha = 0.45f), RoundedCornerShape(50))
                             .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -366,7 +374,7 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
                     }
                 }
 
-                // সংযুক্ত ফাইল চিপ
+                // সংযুক্ত ফাইল
                 attachment?.let { att ->
                     Row(
                         Modifier
@@ -397,70 +405,53 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
                     )
                 }
 
-                // ইনপুট বক্স: লেখা, আর নিচের সারিতে + (বাঁয়ে), মাইক ও পাঠানোর বোতাম (ডানে) — সব বক্সের ভেতরে
+                // ইনপুট বক্স: লেখা উপরে; নিচে + (বাঁয়ে), মাইক ও পাঠানো (ডানে) — সব বক্সের ভেতরে
                 Column(
                     Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
                         .padding(horizontal = 12.dp, vertical = 8.dp)
-                        .clip(RoundedCornerShape(26.dp))
-                        .background(CardBg)
-                        .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(26.dp))
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color(0xFF111827))
+                        .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
                         .padding(horizontal = 10.dp, vertical = 8.dp)
                 ) {
-                    if (recording) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { finishRecording(send = false) }) {
-                                Icon(Icons.Filled.Close, "cancel", tint = Muted)
-                            }
-                            Waveform(levels, Modifier.weight(1f).height(48.dp))
-                            IconButton(onClick = { finishRecording(send = true) }) {
-                                Icon(Icons.Filled.Check, "done", tint = Cyan)
-                            }
+                    TextField(
+                        value = input,
+                        onValueChange = { input = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("সোহান ভাইকে লিখুন…", color = Muted) },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            cursorColor = Cyan
+                        ),
+                        maxLines = 6
+                    )
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { sheetOpen = true }) {
+                            Icon(Icons.Filled.Add, "features", tint = Muted)
                         }
-                    } else {
-                        TextField(
-                            value = input,
-                            onValueChange = { input = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = {
-                                Text(
-                                    if (transcribing) "শোনা হচ্ছে…" else "সোহান ভাইকে লিখুন…",
-                                    color = Muted
-                                )
-                            },
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                cursorColor = Cyan
-                            ),
-                            maxLines = 6
-                        )
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(onClick = { sheetOpen = true }) {
-                                Icon(Icons.Filled.Add, "features", tint = Muted)
-                            }
-                            Spacer(Modifier.weight(1f))
-                            IconButton(onClick = { micPermission.launch(Manifest.permission.RECORD_AUDIO) }) {
-                                Icon(Icons.Filled.Mic, "voice", tint = Cyan)
-                            }
-                            SendButton(
-                                active = (input.isNotBlank() || attachment != null) && !busy,
-                                busy = busy || transcribing
-                            ) { send() }
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = { micPermission.launch(Manifest.permission.RECORD_AUDIO) }) {
+                            Icon(Icons.Filled.Mic, "voice", tint = Cyan)
                         }
+                        SendButton(
+                            active = (input.isNotBlank() || attachment != null) && !busy,
+                            busy = busy
+                        ) { send() }
                     }
                 }
             }
         }
     }
 
-    // অ্যাটাচ (+) শিট: ফিচারগুলো এখানে, ক্লিক করলে চ্যাটে সেই টুল সিলেক্ট হবে
+    // অ্যাটাচ (+) শিট: ফিচারগুলো এখানে; ক্লিক করলে চ্যাটে সেই টুল সিলেক্ট হয়
     if (sheetOpen) {
         ModalBottomSheet(
             onDismissRequest = { sheetOpen = false },
@@ -494,7 +485,7 @@ fun ChatScreen(mode: String, initial: Conversation?, onBack: () -> Unit) {
                             Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
-                                .background(info.color.copy(alpha = 0.18f)),
+                                .background(info.color.copy(alpha = 0.16f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(info.icon, null, tint = info.color, modifier = Modifier.size(20.dp))
@@ -565,32 +556,40 @@ fun Welcome(onPick: (ToolInfo) -> Unit) {
 
 @Composable
 fun ToolCard(info: ToolInfo, onClick: () -> Unit) {
-    GlowBorder(Modifier.fillMaxWidth().padding(bottom = 10.dp).clickable(onClick = onClick), radius = 16.dp) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(info.color.copy(alpha = 0.18f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(info.icon, null, tint = info.color)
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(info.label, color = Color.White, fontWeight = FontWeight.SemiBold)
-                Text(info.subtitle, color = Muted, fontSize = 12.sp)
-            }
-            Icon(Icons.Filled.ChevronRight, null, tint = Muted)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF111827))
+            .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .size(42.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(info.color.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(info.icon, null, tint = info.color)
         }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(info.label, color = Color.White, fontWeight = FontWeight.SemiBold)
+            Text(info.subtitle, color = Muted, fontSize = 12.sp)
+        }
+        Icon(Icons.Filled.ChevronRight, null, tint = Muted)
     }
 }
 
 @Composable
 fun SendButton(active: Boolean, busy: Boolean, onClick: () -> Unit) {
     val pulse by rememberInfiniteTransition(label = "send").animateFloat(
-        1f, 1.08f,
-        infiniteRepeatable(tween(900), RepeatMode.Reverse),
+        1f, 1.05f,
+        infiniteRepeatable(tween(1200), RepeatMode.Reverse),
         label = "pulse"
     )
     Box(
@@ -604,7 +603,7 @@ fun SendButton(active: Boolean, busy: Boolean, onClick: () -> Unit) {
             .clip(CircleShape)
             .background(
                 if (active) Brush.linearGradient(listOf(Cyan, Violet))
-                else Brush.linearGradient(listOf(Muted, Muted))
+                else Brush.linearGradient(listOf(Color(0xFF334155), Color(0xFF334155)))
             )
             .clickable(enabled = active, onClick = onClick),
         contentAlignment = Alignment.Center
@@ -633,12 +632,18 @@ fun HistoryPanel(
     ) {
         Text("ইতিহাস", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
         Spacer(Modifier.height(12.dp))
-        GlowBorder(Modifier.fillMaxWidth().clickable(onClick = onNew), radius = 14.dp) {
-            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Add, null, tint = Cyan)
-                Spacer(Modifier.width(10.dp))
-                Text("নতুন চ্যাট", color = Color.White)
-            }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(CardBg)
+                .clickable(onClick = onNew)
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Add, null, tint = Cyan)
+            Spacer(Modifier.width(10.dp))
+            Text("নতুন চ্যাট", color = Color.White)
         }
         Spacer(Modifier.height(14.dp))
         if (Store.conversations.isEmpty()) {
@@ -688,7 +693,11 @@ fun MessageBubble(m: ChatMessage, animate: Boolean) {
             Modifier
                 .widthIn(max = 290.dp)
                 .clip(RoundedCornerShape(18.dp))
-                .background(if (isUser) Color(0xFF0E7490) else CardBg)
+                .background(
+                    if (isUser) Brush.linearGradient(listOf(Color(0xFF0E7490), Color(0xFF4338CA)))
+                    else Brush.linearGradient(listOf(Color(0xFF111827), Color(0xFF111827)))
+                )
+                .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(18.dp))
                 .padding(12.dp)
         ) {
             m.imagePath?.let { path ->
@@ -744,19 +753,19 @@ fun TypingDots() {
         Row(
             Modifier
                 .clip(RoundedCornerShape(18.dp))
-                .background(CardBg)
+                .background(Color(0xFF111827))
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             repeat(3) { i ->
                 val y by inf.animateFloat(
-                    0f, -6f,
+                    0f, -5f,
                     infiniteRepeatable(tween(450, delayMillis = i * 150), RepeatMode.Reverse),
                     label = "dot$i"
                 )
                 Box(
                     Modifier
-                        .size(8.dp)
+                        .size(7.dp)
                         .graphicsLayer { translationY = y.dp.toPx() }
                         .clip(CircleShape)
                         .background(Cyan)

@@ -67,7 +67,7 @@ import kotlin.math.abs
 import kotlin.math.sin
 import kotlin.random.Random
 
-/** Night sky: twinkling stars and a gently glowing moon. */
+/** Night sky: twinkling stars. */
 @Composable
 fun StarField() {
     val t by rememberInfiniteTransition(label = "sky").animateFloat(
@@ -85,9 +85,6 @@ fun StarField() {
             val a = 0.25f + 0.75f * abs(sin((t + phase) * 2f * PI.toFloat()))
             drawCircle(Color.White.copy(alpha = a), radius = 1f + rnd.nextFloat() * 1.6f, center = Offset(x, y))
         }
-        val moon = Offset(size.width * 0.82f, size.height * 0.07f)
-        drawCircle(Color(0xFFFDE68A), 26.dp.toPx(), moon)
-        drawCircle(Color(0xFF0B1B33), 22.dp.toPx(), moon + Offset(9.dp.toPx(), -5.dp.toPx()))
     }
 }
 

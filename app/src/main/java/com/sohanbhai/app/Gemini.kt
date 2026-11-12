@@ -10,26 +10,37 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-class GeminiException(val code: Int, message: String) : Exception(message)
-
 object Gemini {
     private val http = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(180, TimeUnit.SECONDS)
         .build()
 
-    private const val TEXT_MODEL = "gemini-2.5-flash"
-
-    /** ছবি তৈরির মডেল: একটি না চললে পরের নামটি চেষ্টা করা হয়। */
-    private val IMAGE_MODELS = listOf(
-        "gemini-3.1-flash-image",   // Nano Banana 2 (stable)
-        "gemini-3-pro-image",       // Nano Banana Pro
-        "gemini-2.5-flash-image"    // Nano Banana (stable, older)
+    /** চ্যাটের মডেল: সেরাটা আগে, না চললে পরেরটি। */
+    private val TEXT_MODELS = listOf(
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash"
     )
 
-    fun apiKey(ctx: Context): String =
-        runCatching { ctx.assets.open("API_KEY").bufferedReader().use { it.readText() }.trim() }
-            .getOrDefault("")
+    /** ছবি তৈরি ও এডিটের মডেল (Nano Banana 2 → Nano Banana Pro → Nano Banana)। */
+    private val IMAGE_MODELS = listOf(
+        "gemini-3.1-flash-image-preview",
+        "gemini-3-pro-image-preview",
+        "gemini-2.5-flash-image"
+    )
+
+    /**
+     * assets/API_KEY ফাইলে তিনটি কী, প্রতি লাইনে একটি।
+     * খালি লাইন বাদ যায়।
+     */
+    fun apiKeys(ctx: Context): List<String> =
+        runCatching {
+            ctx.assets.open("API_KEY").bufferedReader().use { it.readLines() }
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+        }.getOrDefault(emptyList())
 
     private fun part(text: String) = JSONObject().put("text", text)
 
@@ -51,7 +62,7 @@ object Gemini {
             if (!resp.isSuccessful) {
                 val msg = runCatching { JSONObject(raw).getJSONObject("error").getString("message") }
                     .getOrDefault(raw.take(200))
-                throw GeminiException(resp.code, "[$model] $msg")
+                throw IllegalStateException("[$model] ${resp.code}: $msg")
             }
             return JSONObject(raw)
         }
@@ -92,7 +103,7 @@ object Gemini {
         return body
     }
 
-    /** Returns (text, imageBytes?) from the first candidate. */
+    /** প্রথম candidate থেকে (লেখা, ছবি) বের করে। ছবি বা লেখা কিছুই না থাকলে ব্যর্থ ধরা হয়। */
     private fun extract(json: JSONObject): Pair<String, ByteArray?> {
         val cands = json.optJSONArray("candidates")
         if (cands == null || cands.length() == 0) {
@@ -115,7 +126,35 @@ object Gemini {
         return text.toString().trim() to image
     }
 
-    /** Returns (text, imageBytes?). */
+    /**
+     * মডেল × কী ঘুরিয়ে চেষ্টা করে। কোটা, রেট-লিমিট বা যেকোনো এরর হলে
+     * কোনো বার্তা না দেখিয়ে পরের কী/মডেলে চলে যায়। সব ব্যর্থ হলেই শেষ এরর ফেরত আসে।
+     */
+    private fun runWithFailover(
+        ctx: Context,
+        models: List<String>,
+        body: JSONObject,
+        needImage: Boolean
+    ): Pair<String, ByteArray?> {
+        val keys = apiKeys(ctx)
+        if (keys.isEmpty()) throw IllegalStateException("API_KEY ফাইলে এখনো কী বসানো হয়নি।")
+
+        var lastError: Exception = IllegalStateException("উত্তর পাওয়া যায়নি।")
+        for (model in models) {
+            for (key in keys) {
+                try {
+                    val result = extract(post(key, model, body))
+                    if (!needImage || result.second != null) return result
+                    lastError = IllegalStateException(result.first.ifEmpty { "মডেল ছবি পাঠায়নি।" })
+                } catch (e: Exception) {
+                    lastError = e
+                }
+            }
+        }
+        throw lastError
+    }
+
+    /** চ্যাট (wantImage = false) বা ছবি তৈরি/এডিট (wantImage = true)। */
     fun generate(
         ctx: Context,
         history: List<ChatMessage>,
@@ -123,42 +162,11 @@ object Gemini {
         attachment: Attachment?,
         wantImage: Boolean
     ): Pair<String, ByteArray?> {
-        val key = apiKey(ctx)
-        if (key.isEmpty()) throw IllegalStateException("API_KEY ফাইলে এখনো কী বসানো হয়নি।")
-
-        if (!wantImage) {
-            return extract(post(key, TEXT_MODEL, buildBody(history, prompt, attachment, false)))
+        val body = buildBody(history, prompt, attachment, wantImage)
+        return if (wantImage) {
+            runWithFailover(ctx, IMAGE_MODELS, body, needImage = true)
+        } else {
+            runWithFailover(ctx, TEXT_MODELS, body, needImage = false)
         }
-
-        val body = buildBody(emptyList(), prompt, attachment, true)
-        var lastError: Exception = IllegalStateException("ছবি তৈরি করা যায়নি")
-        for (model in IMAGE_MODELS) {
-            try {
-                val (text, img) = extract(post(key, model, body))
-                if (img != null) return text to img
-                lastError = IllegalStateException(text.ifEmpty { "মডেল ছবি পাঠায়নি, অন্যভাবে বর্ণনা দিয়ে দেখো।" })
-            } catch (e: GeminiException) {
-                lastError = e
-                if (e.code != 404) break // 404 = এই মডেল নামটি এই কী-তে নেই, তাই পরেরটি চেষ্টা করো
-            } catch (e: Exception) {
-                lastError = e
-                break
-            }
-        }
-        throw lastError
-    }
-
-    /** Own-recorded WAV audio -> text, using Gemini as the speech recogniser. */
-    fun transcribe(ctx: Context, wav: ByteArray): String {
-        val key = apiKey(ctx)
-        if (key.isEmpty()) throw IllegalStateException("API_KEY ফাইলে এখনো কী বসানো হয়নি।")
-        val parts = JSONArray()
-            .put(part("এই অডিওতে কেউ যা বলেছে তা হুবহু লিখে দাও (যে ভাষায় বলা হয়েছে সেই ভাষায়)। শুধু লেখাটুকু দাও, কোনো ব্যাখ্যা নয়।"))
-            .put(inline("audio/wav", wav))
-        val body = JSONObject().put(
-            "contents",
-            JSONArray().put(JSONObject().put("role", "user").put("parts", parts))
-        )
-        return extract(post(key, TEXT_MODEL, body)).first
     }
 }

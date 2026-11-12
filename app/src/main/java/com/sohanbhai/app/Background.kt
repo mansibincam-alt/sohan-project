@@ -7,9 +7,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -18,9 +19,9 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 
 /**
- * Looping, muted background video from res/raw/background_video.mp4.
- * Put a waterfall / mountain clip there (keep it ~1080p, ~5-10 MB, so the APK stays small).
- * If the file is missing, the animated starfield is shown instead.
+ * পিছনে লুপ হওয়া ভিডিও: res/raw/background_video.mp4 (নিঃশব্দ)।
+ * ফিল্টার হালকা: ভিডিও স্পষ্ট দেখা যায়, সামান্য ব্লার ও হালকা ছায়া থাকে।
+ * ফাইল না থাকলে তারার আকাশ দেখায়।
  */
 @Composable
 fun VideoBackground(modifier: Modifier = Modifier) {
@@ -51,16 +52,22 @@ fun VideoBackground(modifier: Modifier = Modifier) {
                         this.player = player
                     }
                 },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(3.dp)
             )
         }
-        // darkening so text stays readable
+        // হালকা ছায়া: উপরে-নিচে সামান্য গাঢ়, মাঝখানে স্পষ্ট
         Box(
             Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        listOf(Night.copy(alpha = 0.45f), Night.copy(alpha = 0.8f), Night)
+                        listOf(
+                            Night.copy(alpha = 0.25f),
+                            Night.copy(alpha = 0.05f),
+                            Night.copy(alpha = 0.35f)
+                        )
                     )
                 )
         )

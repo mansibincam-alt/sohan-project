@@ -289,40 +289,48 @@ fun ProfileBox(onAbout: () -> Unit) {
 /** লম্বা চ্যাট বাটন: "এআই এর সাথে চ্যাট করতে এখানে ক্লিক করুন"। */
 @Composable
 fun ChatBox(onClick: () -> Unit) {
-    GlowBorder(Modifier.fillMaxWidth().clickable(onClick = onClick), radius = 20.dp) {
-        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "এআই এর সাথে চ্যাট করতে এখানে ক্লিক করুন",
-                color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(Icons.Filled.ChevronRight, null, tint = Cyan)
-        }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF111827))
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 18.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "এআই এর সাথে চ্যাট করতে এখানে ক্লিক করুন",
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f)
+        )
+        Icon(Icons.Filled.ChevronRight, null, tint = Cyan)
     }
 }
 
 @Composable
 fun FeatureCard(label: String, icon: ImageVector, tint: Color, modifier: Modifier, onClick: () -> Unit) {
-    val pulse by rememberInfiniteTransition(label = "fc").animateFloat(
-        1f, 1.15f,
-        infiniteRepeatable(tween(1400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "pulse"
-    )
-    GlowBorder(modifier.clickable(onClick = onClick), radius = 18.dp) {
-        Column(
-            Modifier.padding(vertical = 14.dp, horizontal = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+    Column(
+        modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF111827))
+            .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 16.dp, horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            Modifier
+                .size(42.dp)
+                .clip(RoundedCornerShape(13.dp))
+                .background(tint.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center
         ) {
-            Icon(
-                icon, null, tint = tint,
-                modifier = Modifier
-                    .size(28.dp)
-                    .graphicsLayer { scaleX = pulse; scaleY = pulse }
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(label, color = Color.White, fontSize = 13.sp, textAlign = TextAlign.Center)
+            Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp))
         }
+        Spacer(Modifier.height(10.dp))
+        Text(label, color = Color.White, fontSize = 12.sp, textAlign = TextAlign.Center)
     }
 }

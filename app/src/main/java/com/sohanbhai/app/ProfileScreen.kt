@@ -56,7 +56,7 @@ fun ProfileScreen(onBack: () -> Unit) {
                 .padding(bottom = 32.dp)
         ) {
             // কভার: প্রাকৃতিক দৃশ্য, বাঁয়ে বাটন, ডানে লোগো
-            Box(Modifier.fillMaxWidth().height(190.dp)) {
+            Box(Modifier.fillMaxWidth().height(230.dp)) {
                 VideoBackground(Modifier.fillMaxSize())
                 Box(Modifier.statusBarsPadding().padding(12.dp)) {
                     IconCircle(Icons.Filled.ArrowBack, "back", onBack)
@@ -75,9 +75,9 @@ fun ProfileScreen(onBack: () -> Unit) {
             }
 
             Column(Modifier.padding(horizontal = 18.dp)) {
-                // ছবিটি কভারের উপরে ভেসে থাকে; লেআউটে জায়গা নেয় ৫৪ dp
-                Box(Modifier.fillMaxWidth().height(54.dp)) {
-                    SohanPhoto(104.dp, modifier = Modifier.offset(y = (-50).dp))
+                // বড় গোল ছবি কভারের উপরে ভেসে থাকে (১৮০ dp); লেআউটে জায়গা নেয় ৯০ dp
+                Box(Modifier.fillMaxWidth().height(90.dp)) {
+                    SohanPhoto(180.dp, modifier = Modifier.offset(y = (-90).dp))
                 }
 
                 Reveal(0) {
