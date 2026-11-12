@@ -50,6 +50,9 @@ object Gemini {
                 }
         }.getOrDefault(emptyList())
 
+    /** HTTP এরর কোড সহ। 404 হলে মডেল নেই (পরের মডেল), বাকি সব হলে পরের কী। */
+    private class HttpFail(val code: Int, msg: String) : IllegalStateException(msg)
+
     private fun part(text: String) = JSONObject().put("text", text)
 
     private fun inline(mime: String, bytes: ByteArray) = JSONObject().put(
@@ -79,7 +82,7 @@ object Gemini {
                 val detail = runCatching { JSONObject(raw).getJSONObject("error").getString("message") }
                     .getOrDefault(raw.take(200))
                 Log.w("Gemini", "[$model] ${resp.code}: $detail")
-                throw IllegalStateException(friendly(resp.code))
+                throw HttpFail(resp.code, friendly(resp.code))
             }
             return JSONObject(raw)
         }
@@ -144,8 +147,9 @@ object Gemini {
     }
 
     /**
-     * মডেল × কী ঘুরিয়ে চেষ্টা করে। কোটা, রেট-লিমিট বা যেকোনো এরর হলে
-     * কোনো বার্তা না দেখিয়ে পরের কী/মডেলে চলে যায়। সব ব্যর্থ হলেই শেষ এরর ফেরত আসে।
+     * কী ধরে ধরে চেষ্টা: প্রথমে কী-১ দিয়ে একটি কল। এরর হলে কোনো বার্তা না দেখিয়ে কী-২,
+     * তারপর কী-৩। একসাথে একটির বেশি কল যায় না; প্রথম সফল উত্তরেই থামে।
+     * মডেল না পাওয়া গেলে (404) একই কী দিয়ে পরের মডেল। সব ব্যর্থ হলে শেষ এরর ফেরত আসে।
      */
     private fun runWithFailover(
         ctx: Context,
@@ -157,14 +161,18 @@ object Gemini {
         if (keys.isEmpty()) throw IllegalStateException("API_KEY ফাইলে এখনো কী বসানো হয়নি।")
 
         var lastError: Exception = IllegalStateException("উত্তর পাওয়া যায়নি।")
-        for (model in models) {
-            for (key in keys) {
+        for (key in keys) {
+            for (model in models) {
                 try {
                     val result = extract(post(key, model, body))
                     if (!needImage || result.second != null) return result
                     lastError = IllegalStateException(result.first.ifEmpty { "মডেল ছবি পাঠায়নি।" })
+                } catch (e: HttpFail) {
+                    lastError = e
+                    if (e.code != 404) break // কী-সংক্রান্ত/কোটার এরর: পরের কী
                 } catch (e: Exception) {
                     lastError = e
+                    break // অন্য এরর: পরের কী
                 }
             }
         }
