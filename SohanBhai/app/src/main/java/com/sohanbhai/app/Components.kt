@@ -104,7 +104,7 @@ fun GlowBorder(modifier: Modifier = Modifier, radius: Dp = 22.dp, content: @Comp
                         colors = listOf(Cyan, Violet, Color(0xFFEC4899), Cyan),
                         start = Offset(o, 0f),
                         end = Offset(o + 450f, 0f),
-                        tileMode = TileMode.Repeat
+                        tileMode = TileMode.Repeated
                     ),
                     cornerRadius = CornerRadius(radius.toPx()),
                     style = Stroke(2.dp.toPx())
