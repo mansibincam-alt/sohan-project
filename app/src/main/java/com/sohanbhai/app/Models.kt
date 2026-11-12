@@ -89,6 +89,16 @@ object Store {
         file?.writeText(arr.toString())
     }
 
+    fun delete(c: Conversation) {
+        conversations.remove(c)
+        persist()
+    }
+
+    fun clearAll() {
+        conversations.clear()
+        persist()
+    }
+
     /** Moves the conversation to the top of history and saves it. */
     fun touch(c: Conversation) {
         conversations.remove(c)

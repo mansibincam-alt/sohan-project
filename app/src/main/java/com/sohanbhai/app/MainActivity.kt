@@ -13,7 +13,7 @@ import androidx.compose.runtime.setValue
 sealed class Route {
     object Home : Route()
     data class Chat(val mode: String = "chat", val conv: Conversation? = null) : Route()
-    data class Image(val edit: Boolean = false) : Route()
+    object Profile : Route()
 }
 
 class MainActivity : ComponentActivity() {
@@ -35,6 +35,6 @@ fun App() {
     when (val r = route) {
         Route.Home -> HomeScreen(go)
         is Route.Chat -> ChatScreen(r.mode, r.conv, onBack = { route = Route.Home })
-        is Route.Image -> ImageScreen(r.edit, onBack = { route = Route.Home })
+        Route.Profile -> ProfileScreen(onBack = { route = Route.Home })
     }
 }
